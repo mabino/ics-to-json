@@ -2,6 +2,7 @@
  * Google Apps Script to ingest a remote ICS file, transform it to JSON, cache it,
  * and provide it via a web app endpoint. Includes CLEAR_CACHE functionality.
  * Excludes "END:VEVENT" and "END:VCALENDAR" from the JSON output.
+ * Fetches additional data from event URLs based on CSS classes defined in script properties.
  */
 
 function doGet(e) {
@@ -39,6 +40,7 @@ function doGet(e) {
 function processIcsAndReturnJson() {
   var debug = PropertiesService.getScriptProperties().getProperty('DEBUG') === 'true';
   var icsUrl = PropertiesService.getScriptProperties().getProperty('ICS_URL');
+  var additionalDataConfig = PropertiesService.getScriptProperties().getProperty('ADDITIONAL_DATA_CONFIG');
 
   if (!icsUrl) {
     return ContentService.createTextOutput(JSON.stringify({ error: 'ICS_URL script property not set' }))
@@ -49,6 +51,10 @@ function processIcsAndReturnJson() {
     var response = UrlFetchApp.fetch(icsUrl);
     var icsContent = response.getContentText();
     var json = icsToJson(icsContent);
+
+    if (additionalDataConfig) {
+      json = enrichEventsWithAdditionalData(json, additionalDataConfig);
+    }
 
     if (debug) {
       console.log('ICS processed, JSON:', JSON.stringify(json));
@@ -94,6 +100,49 @@ function icsToJson(icsContent) {
   return events;
 }
 
+function enrichEventsWithAdditionalData(events, configString) {
+  var configs = configString.split(',');
+  var configMap = {};
+
+  configs.forEach(function(config) {
+    var parts = config.split(':');
+    if (parts.length === 2) {
+      configMap[parts[0].trim()] = parts[1].trim();
+    }
+  });
+
+  return events.map(function(event) {
+    if (event.URL) {
+      try {
+        var response = UrlFetchApp.fetch(event.URL);
+        var html = response.getContentText();
+        var document = XmlService.parse(html);
+        var root = document.getRootElement();
+
+        for (var key in configMap) {
+          var className = configMap[key];
+          var elements = root.getDescendants(XmlService.ElementType.ELEMENT);
+          var found = false;
+          for (var i = 0; i < elements.length; i++) {
+            var element = elements[i];
+            if (element.getAttribute('class') && element.getAttribute('class').getValue() === className) {
+              event[key] = element.getText();
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            event[key] = "";
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching or parsing URL:', event.URL, e);
+      }
+    }
+    return event;
+  });
+}
+
 /**
  * Function to set up the Script Properties.
  */
@@ -102,4 +151,5 @@ function setupScriptProperties() {
   properties.setProperty('ICS_URL', 'YOUR_ICS_URL_HERE'); // Replace with your ICS URL
   properties.setProperty('DEBUG', 'false'); // Set to 'true' for debug logging
   properties.setProperty('CLEAR_CACHE', 'false'); // Set to 'true' to clear cache on next request.
+  properties.setProperty('ADDITIONAL_DATA_CONFIG', 'SUBTITLE:event_subtitle,ROOM:event_room,VIRTUALURL:event_virtual_url'); // set your configs
 }
