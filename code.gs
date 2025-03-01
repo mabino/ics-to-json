@@ -3,6 +3,7 @@
  * and provide it via a web app endpoint. Includes CLEAR_CACHE functionality.
  * Excludes "END:VEVENT" and "END:VCALENDAR" from the JSON output.
  * Fetches additional data from event URLs based on CSS classes defined in script properties.
+ * Allows renaming of JSON keys via script properties.
  */
 
 function doGet(e) {
@@ -41,6 +42,7 @@ function processIcsAndReturnJson() {
   var debug = PropertiesService.getScriptProperties().getProperty('DEBUG') === 'true';
   var icsUrl = PropertiesService.getScriptProperties().getProperty('ICS_URL');
   var additionalDataConfig = PropertiesService.getScriptProperties().getProperty('ADDITIONAL_DATA_CONFIG');
+  var keyRenames = PropertiesService.getScriptProperties().getProperty('KEY_RENAMES');
 
   if (!icsUrl) {
     return ContentService.createTextOutput(JSON.stringify({ error: 'ICS_URL script property not set' }))
@@ -54,6 +56,10 @@ function processIcsAndReturnJson() {
 
     if (additionalDataConfig) {
       json = enrichEventsWithAdditionalData(json, additionalDataConfig);
+    }
+
+    if (keyRenames) {
+      json = renameJsonKeys(json, keyRenames);
     }
 
     if (debug) {
@@ -139,6 +145,27 @@ function enrichEventsWithAdditionalData(events, configString) {
   });
 }
 
+function renameJsonKeys(events, renameConfig) {
+  var renames = renameConfig.split(',');
+  var renameMap = {};
+
+  renames.forEach(function(rename) {
+    var parts = rename.split(':');
+    if (parts.length === 2) {
+      renameMap[parts[0].trim()] = parts[1].trim();
+    }
+  });
+
+  return events.map(function(event) {
+    var newEvent = {};
+    for (var key in event) {
+      var newKey = renameMap[key] || key; // Use new key if defined, otherwise keep original
+      newEvent[newKey] = event[key];
+    }
+    return newEvent;
+  });
+}
+
 /**
  * Function to set up the Script Properties.
  */
@@ -148,4 +175,5 @@ function setupScriptProperties() {
   properties.setProperty('DEBUG', 'false'); // Set to 'true' for debug logging
   properties.setProperty('CLEAR_CACHE', 'false'); // Set to 'true' to clear cache on next request.
   properties.setProperty('ADDITIONAL_DATA_CONFIG', 'SUBTITLE:event_subtitle,ROOM:event_room,VIRTUALURL:event_virtual_url'); // set your configs
+  properties.setProperty('KEY_RENAMES', 'SUMMARY:title,DESCRIPTION:details'); // Example key renames
 }
