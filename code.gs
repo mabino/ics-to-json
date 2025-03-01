@@ -4,7 +4,8 @@
  * Excludes "END:VEVENT" and "END:VCALENDAR" from the JSON output.
  * Fetches additional data from event URLs based on CSS classes defined in script properties.
  * Allows renaming of JSON keys via script properties.
- * Allows setting cache timeout via script properties.
+ * Sends an email log if EMAIL_LOG script property is set.
+ * Allows placeholder values via PLACEHOLDER_VALUES script property.
  */
 
 function doGet(e) {
@@ -44,7 +45,9 @@ function processIcsAndReturnJson() {
   var icsUrl = PropertiesService.getScriptProperties().getProperty('ICS_URL');
   var additionalDataConfig = PropertiesService.getScriptProperties().getProperty('ADDITIONAL_DATA_CONFIG');
   var keyRenames = PropertiesService.getScriptProperties().getProperty('KEY_RENAMES');
+  var emailLog = PropertiesService.getScriptProperties().getProperty('EMAIL_LOG');
   var cacheTimeout = parseInt(PropertiesService.getScriptProperties().getProperty('CACHE_TIMEOUT')) || 21600; // Default: 6 hours
+  var placeholderValues = PropertiesService.getScriptProperties().getProperty('PLACEHOLDER_VALUES');
 
   if (!icsUrl) {
     return ContentService.createTextOutput(JSON.stringify({ error: 'ICS_URL script property not set' }))
@@ -60,6 +63,10 @@ function processIcsAndReturnJson() {
       json = enrichEventsWithAdditionalData(json, additionalDataConfig);
     }
 
+    if (placeholderValues) {
+      json = applyPlaceholderValues(json, placeholderValues);
+    }
+
     if (keyRenames) {
       json = renameJsonKeys(json, keyRenames);
     }
@@ -69,6 +76,11 @@ function processIcsAndReturnJson() {
     }
 
     CacheService.getScriptCache().put('cachedIcsJson', JSON.stringify(json), cacheTimeout);
+
+    if (emailLog) {
+      sendEmailLog(JSON.stringify(json, null, 2)); // Send formatted JSON in email
+    }
+
     return ContentService.createTextOutput(JSON.stringify(json)).setMimeType(ContentService.MimeType.JSON);
   } catch (e) {
     if (debug) {
@@ -161,11 +173,39 @@ function renameJsonKeys(events, renameConfig) {
   return events.map(function(event) {
     var newEvent = {};
     for (var key in event) {
-      var newKey = renameMap[key] || key;
+      var newKey = renameMap[key] || key; // Use new key if defined, otherwise keep original
       newEvent[newKey] = event[key];
     }
     return newEvent;
   });
+}
+
+function applyPlaceholderValues(events, placeholderConfig) {
+  var placeholders = placeholderConfig.split(',');
+  var placeholderMap = {};
+
+  placeholders.forEach(function(placeholder) {
+    var parts = placeholder.split(':');
+    if (parts.length === 2) {
+      placeholderMap[parts[0].trim()] = parts[1].trim();
+    }
+  });
+
+  return events.map(function(event) {
+    for (var newKey in placeholderMap) {
+      var existingKey = placeholderMap[newKey];
+      if (event[existingKey] !== undefined) {
+        event[newKey] = event[existingKey];
+      }
+    }
+    return event;
+  });
+}
+
+function sendEmailLog(jsonString) {
+  var subject = "ICS to JSON Script Execution Log";
+  var body = "Script executed successfully. Here is the JSON output:\n\n" + jsonString;
+  MailApp.sendEmail(Session.getActiveUser().getEmail(), subject, body);
 }
 
 /**
@@ -178,5 +218,7 @@ function setupScriptProperties() {
   properties.setProperty('CLEAR_CACHE', 'false');
   properties.setProperty('ADDITIONAL_DATA_CONFIG', 'SUBTITLE:event_subtitle,ROOM:event_room,VIRTUALURL:event_virtual_url');
   properties.setProperty('KEY_RENAMES', 'SUMMARY:title,DESCRIPTION:details');
-  properties.setProperty('CACHE_TIMEOUT', '21600'); // Default: 6 hours (seconds)
+  properties.setProperty('EMAIL_LOG', 'true');
+  properties.setProperty('CACHE_TIMEOUT', '21600');
+  properties.setProperty('PLACEHOLDER_VALUES', 'title2:SUMMARY,description2:DESCRIPTION'); // Example placeholder values
 }
