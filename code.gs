@@ -116,27 +116,23 @@ function enrichEventsWithAdditionalData(events, configString) {
       try {
         var response = UrlFetchApp.fetch(event.URL);
         var html = response.getContentText();
-        var document = XmlService.parse(html);
-        var root = document.getRootElement();
 
         for (var key in configMap) {
           var className = configMap[key];
-          var elements = root.getDescendants(XmlService.ElementType.ELEMENT);
-          var found = false;
-          for (var i = 0; i < elements.length; i++) {
-            var element = elements[i];
-            if (element.getAttribute('class') && element.getAttribute('class').getValue() === className) {
-              event[key] = element.getText();
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
+          var regex = new RegExp('<[^>]+class="[^"]*' + className + '[^"]*">([^<]+)<', 'i');
+          var match = regex.exec(html);
+
+          if (match && match[1]) {
+            event[key] = match[1].trim();
+          } else {
             event[key] = "";
           }
         }
       } catch (e) {
         console.error('Error fetching or parsing URL:', event.URL, e);
+        for (var key in configMap) {
+          event[key] = "";
+        }
       }
     }
     return event;
