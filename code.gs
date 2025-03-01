@@ -4,6 +4,7 @@
  * Excludes "END:VEVENT" and "END:VCALENDAR" from the JSON output.
  * Fetches additional data from event URLs based on CSS classes defined in script properties.
  * Allows renaming of JSON keys via script properties.
+ * Allows setting cache timeout via script properties.
  */
 
 function doGet(e) {
@@ -43,6 +44,7 @@ function processIcsAndReturnJson() {
   var icsUrl = PropertiesService.getScriptProperties().getProperty('ICS_URL');
   var additionalDataConfig = PropertiesService.getScriptProperties().getProperty('ADDITIONAL_DATA_CONFIG');
   var keyRenames = PropertiesService.getScriptProperties().getProperty('KEY_RENAMES');
+  var cacheTimeout = parseInt(PropertiesService.getScriptProperties().getProperty('CACHE_TIMEOUT')) || 21600; // Default: 6 hours
 
   if (!icsUrl) {
     return ContentService.createTextOutput(JSON.stringify({ error: 'ICS_URL script property not set' }))
@@ -66,7 +68,7 @@ function processIcsAndReturnJson() {
       console.log('ICS processed, JSON:', JSON.stringify(json));
     }
 
-    CacheService.getScriptCache().put('cachedIcsJson', JSON.stringify(json), 21600); // Cache for 6 hours
+    CacheService.getScriptCache().put('cachedIcsJson', JSON.stringify(json), cacheTimeout);
     return ContentService.createTextOutput(JSON.stringify(json)).setMimeType(ContentService.MimeType.JSON);
   } catch (e) {
     if (debug) {
@@ -159,7 +161,7 @@ function renameJsonKeys(events, renameConfig) {
   return events.map(function(event) {
     var newEvent = {};
     for (var key in event) {
-      var newKey = renameMap[key] || key; // Use new key if defined, otherwise keep original
+      var newKey = renameMap[key] || key;
       newEvent[newKey] = event[key];
     }
     return newEvent;
@@ -171,9 +173,10 @@ function renameJsonKeys(events, renameConfig) {
  */
 function setupScriptProperties() {
   var properties = PropertiesService.getScriptProperties();
-  properties.setProperty('ICS_URL', 'YOUR_ICS_URL_HERE'); // Replace with your ICS URL
-  properties.setProperty('DEBUG', 'false'); // Set to 'true' for debug logging
-  properties.setProperty('CLEAR_CACHE', 'false'); // Set to 'true' to clear cache on next request.
-  properties.setProperty('ADDITIONAL_DATA_CONFIG', 'SUBTITLE:event_subtitle,ROOM:event_room,VIRTUALURL:event_virtual_url'); // set your configs
-  properties.setProperty('KEY_RENAMES', 'SUMMARY:title,DESCRIPTION:details'); // Example key renames
+  properties.setProperty('ICS_URL', 'YOUR_ICS_URL_HERE');
+  properties.setProperty('DEBUG', 'false');
+  properties.setProperty('CLEAR_CACHE', 'false');
+  properties.setProperty('ADDITIONAL_DATA_CONFIG', 'SUBTITLE:event_subtitle,ROOM:event_room,VIRTUALURL:event_virtual_url');
+  properties.setProperty('KEY_RENAMES', 'SUMMARY:title,DESCRIPTION:details');
+  properties.setProperty('CACHE_TIMEOUT', '21600'); // Default: 6 hours (seconds)
 }
