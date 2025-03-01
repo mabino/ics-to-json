@@ -10,3 +10,4 @@ Google Apps Script to ingest a remote ICS file, transform it to JSON, cache it, 
 | DEBUG                  | true                                    | Exposes verbose logging in the console.                                                                                 |
 | ICS_URL                | URL                                     | Source of ICS data.                                                                                                     |
 | KEY_RENAMES            | DESCRIPTION:description,SUMMARY:title   | Replaces key names derived from the ICS file with custom string.                                                        |
+| PLACEHOLDER_VALUES            | description2:DESCRIPTION,title2:SUMMARY   | Inserts custom key names with values pulled from other keys.                                                        |
