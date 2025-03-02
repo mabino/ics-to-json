@@ -40,6 +40,27 @@ function doGet(e) {
   }
 }
 
+function cleanUrl(url) {
+  if (!url) {
+    return "";
+  }
+  let cleanedUrl = url.trim(); // Start with a basic trim
+
+  // Inspect character codes (for debugging)
+  if (PropertiesService.getScriptProperties().getProperty('DEBUG') === 'true') {
+    let charCodes = [];
+    for (let i = 0; i < cleanedUrl.length; i++) {
+      charCodes.push(cleanedUrl.charCodeAt(i));
+    }
+    //console.log("Character Codes: " + charCodes.join(", "));
+  }
+
+  cleanedUrl = cleanedUrl.replace(/[\x00-\x1F\x7F-\xA0\u2000-\u206F\u3000]+/g, ''); //Remove control and whitespace
+  cleanedUrl = cleanedUrl.replace(/[\uE000-\uF8FF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]/g, ''); // Remove more unicode characters
+
+  return cleanedUrl;
+}
+
 function processIcsAndReturnJson() {
   var debug = PropertiesService.getScriptProperties().getProperty('DEBUG') === 'true';
   var icsUrl = PropertiesService.getScriptProperties().getProperty('ICS_URL');
@@ -98,20 +119,45 @@ function icsToJson(icsContent) {
   for (var i = 1; i < eventBlocks.length; i++) {
     var eventBlock = eventBlocks[i];
     var event = {};
-    var lines = eventBlock.split('\n');
-
-    for (var j = 0; j < lines.length; j++) {
-      var line = lines[j].trim();
+    let lines = eventBlock.split('\n');
+    
+    // Join wrapped lines first (lines starting with a space)
+    let unwrappedLines = [];
+    let currentLine = "";
+    
+    for (let j = 0; j < lines.length; j++) {
+      let line = lines[j];
+      if (line.startsWith(" ")) {
+        // This is a continuation line, append it to the current line
+        currentLine += line.trim();
+      } else {
+        // This is a new line
+        if (currentLine) {
+          unwrappedLines.push(currentLine);
+        }
+        currentLine = line;
+      }
+    }
+    if (currentLine) {
+      unwrappedLines.push(currentLine);
+    }
+    
+    // Now process the unwrapped lines
+    for (let j = 0; j < unwrappedLines.length; j++) {
+      let line = unwrappedLines[j].trim();
 
       if (line.startsWith('END:VEVENT') || line.startsWith('END:VCALENDAR')) {
-        continue; // Skip END lines
+        continue;
       }
 
-      var parts = line.split(':');
-      var key = parts[0].split(';')[0]; // Remove parameters like TZID
-      var value = parts.slice(1).join(':');
+      let parts = line.split(':');
+      let key = parts[0].split(';')[0];
+      let value = parts.slice(1).join(':');
 
       if (key && value) {
+        if (key === 'URL') {
+          value = cleanUrl(value);
+        }
         event[key] = value;
       }
     }
@@ -133,8 +179,12 @@ function enrichEventsWithAdditionalData(events, configString) {
 
   return events.map(function(event) {
     if (event.URL) {
+      var cleanedUrl = cleanUrl(event.URL);
+      if (PropertiesService.getScriptProperties().getProperty('DEBUG') === 'true') {
+        console.log("Attempting to fetch URL: " + cleanedUrl);
+      }
       try {
-        var response = UrlFetchApp.fetch(event.URL);
+        var response = UrlFetchApp.fetch(cleanedUrl);
         var html = response.getContentText();
 
         for (var key in configMap) {
@@ -149,7 +199,7 @@ function enrichEventsWithAdditionalData(events, configString) {
           }
         }
       } catch (e) {
-        console.error('Error fetching or parsing URL:', event.URL, e);
+        console.error('Error fetching or parsing URL:', cleanedUrl, e);
         for (var key in configMap) {
           event[key] = "";
         }
